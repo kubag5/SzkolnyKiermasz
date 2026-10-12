@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: szkolny_kiermasz
+      POSTGRES_USER: kiermasz
+      POSTGRES_PASSWORD: kiermasz_local
+    ports:
+      - "5432:5432"
+    volumes:
+      - kiermasz_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kiermasz -d szkolny_kiermasz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  kiermasz_postgres:

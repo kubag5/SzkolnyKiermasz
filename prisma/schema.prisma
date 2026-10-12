@@ -1,0 +1,56 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum OfferStatus {
+  AVAILABLE
+  SOLD
+}
+
+enum OfferCondition {
+  NEW
+  VERY_GOOD
+  GOOD
+  ACCEPTABLE
+}
+
+model User {
+  id           String   @id @default(cuid())
+  username     String   @unique @db.VarChar(24)
+  nickname     String   @db.VarChar(32)
+  passwordHash String
+  createdAt    DateTime @default(now())
+  offers       Offer[]
+}
+
+model Offer {
+  id          String         @id @default(cuid())
+  title       String         @db.VarChar(120)
+  description String         @db.VarChar(1200)
+  pricePln    Decimal        @db.Decimal(10, 2)
+  condition   OfferCondition
+  status      OfferStatus    @default(AVAILABLE)
+  sellerId    String
+  seller      User           @relation(fields: [sellerId], references: [id], onDelete: Restrict)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@index([status, createdAt])
+  @@index([sellerId, createdAt])
+}
+
+model ExchangeRate {
+  id            String   @id @default(cuid())
+  baseCurrency  String   @db.Char(3)
+  quoteCurrency String   @db.Char(3)
+  date          DateTime @db.Date
+  rate          Decimal  @db.Decimal(18, 8)
+  fetchedAt     DateTime @default(now())
+
+  @@unique([baseCurrency, quoteCurrency, date])
+}

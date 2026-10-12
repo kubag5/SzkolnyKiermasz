@@ -1,0 +1,14 @@
+node_modules/
+dist/
+dist-server/
+.env
+.env.*.local
+coverage/
+*.tsbuildinfo
+.DS_Store
+npm-debug.log*
+pnpm-debug.log*
+
+# lokalne materiały, nie do repo
+README.md
+docs/
