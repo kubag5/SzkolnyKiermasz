@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { ArrowRight, BookOpen, CircleHelp, Search, SlidersHorizontal } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ArrowRight, BookOpen, CircleHelp, Search, SlidersHorizontal, X } from "lucide-react";
 import { Link } from "react-router-dom";
 import { OfferCard } from "../components/OfferCard";
 import { api, ApiError, type Currency, type Offer, type Rate } from "../lib/api";
@@ -31,6 +31,19 @@ export function OffersPage() {
   const [rateError, setRateError] = useState("");
   const [showFilters, setShowFilters] = useState(false);
   const [currencyFallbackActive, setCurrencyFallbackActive] = useState(false);
+  const [rateAttempt, setRateAttempt] = useState(0);
+  const filtersKey = `${search}\u0000${minPrice}\u0000${maxPrice}\u0000${status}`;
+  const filtersKeyRef = useRef(filtersKey);
+  filtersKeyRef.current = filtersKey;
+  const activeFilterCount = [search, minPrice, maxPrice, status !== "AVAILABLE" ? status : ""].filter(Boolean).length;
+
+  function clearFilters() {
+    setQuery("");
+    setSearch("");
+    setMinPrice("");
+    setMaxPrice("");
+    setStatus("AVAILABLE");
+  }
 
   useEffect(() => {
     const timer = window.setTimeout(() => setSearch(query.trim()), 280);
@@ -39,16 +52,18 @@ export function OffersPage() {
 
   useEffect(() => {
     let active = true;
-    api<Currency[]>("/api/currencies").then((items) => {
+    const controller = new AbortController();
+    api<Currency[]>("/api/currencies", { signal: controller.signal }).then((items) => {
       if (active) { setCurrencies(items); setCurrencyFallbackActive(false); }
     }).catch(() => {
       if (active) setCurrencyFallbackActive(true);
     });
-    return () => { active = false; };
+    return () => { active = false; controller.abort(); };
   }, []);
 
   useEffect(() => {
     let active = true;
+    const controller = new AbortController();
     if (currency === "PLN") {
       setRate({ base: "PLN", quote: "PLN", date: new Date().toISOString().slice(0, 10), rate: 1, stale: false });
       setRateError("");
@@ -56,33 +71,35 @@ export function OffersPage() {
     }
     setRate(null);
     setRateError("");
-    api<Rate>(`/api/rates/${currency}`).then((result) => {
+    api<Rate>(`/api/rates/${currency}`, { signal: controller.signal }).then((result) => {
       if (active) setRate(result);
     }).catch((loadError) => {
       if (active) setRateError(loadError instanceof ApiError ? loadError.message : "Nie udało się pobrać kursu.");
     });
-    return () => { active = false; };
-  }, [currency]);
+    return () => { active = false; controller.abort(); };
+  }, [currency, rateAttempt]);
 
   useEffect(() => {
     let active = true;
+    const controller = new AbortController();
     setLoading(true);
     setError("");
     const params = new URLSearchParams({ page: "1", status });
     if (search) params.set("search", search);
     if (minPrice) params.set("minPrice", minPrice);
     if (maxPrice) params.set("maxPrice", maxPrice);
-    api<OfferPage>(`/api/offers?${params}`).then((result) => {
+    api<OfferPage>(`/api/offers?${params}`, { signal: controller.signal }).then((result) => {
       if (active) { setOffers(result.offers); setTotal(result.meta.total); setPage(1); }
     }).catch((loadError) => {
       if (active) setError(loadError instanceof ApiError ? loadError.message : "Nie udało się pobrać ofert.");
     }).finally(() => { if (active) setLoading(false); });
-    return () => { active = false; };
+    return () => { active = false; controller.abort(); };
   }, [search, minPrice, maxPrice, status]);
 
   async function loadMore() {
     if (moreLoading || offers.length >= total) return;
     setMoreLoading(true);
+    const requestedFilters = filtersKey;
     const nextPage = page + 1;
     const params = new URLSearchParams({ page: String(nextPage), status });
     if (search) params.set("search", search);
@@ -90,6 +107,7 @@ export function OffersPage() {
     if (maxPrice) params.set("maxPrice", maxPrice);
     try {
       const result = await api<OfferPage>(`/api/offers?${params}`);
+      if (filtersKeyRef.current !== requestedFilters) return;
       setOffers((current) => [...current, ...result.offers]);
       setPage(nextPage);
     } catch (loadError) {
@@ -117,17 +135,22 @@ export function OffersPage() {
     <section className="market-section" id="lista-ofert">
       <div className="section-heading">
         <h2>Lista ofert</h2>
-        <div className="offer-count"><strong>{total}</strong> <span>wyników</span></div>
+        <div className="heading-actions">
+          <div className="offer-count"><strong>{total}</strong> <span>wyników</span></div>
+          {activeFilterCount > 0 && <button className="clear-filters" type="button" onClick={clearFilters}>Wyczyść filtry</button>}
+        </div>
       </div>
 
       <div className="market-toolbar">
-        <label className="search-box">
-          <Search size={18} />
-          <span className="visually-hidden">Szukaj książki</span>
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Szukaj po tytule..." />
-        </label>
-        <button className={`filter-toggle ${showFilters ? "active" : ""}`} type="button" aria-expanded={showFilters} onClick={() => setShowFilters((shown) => !shown)}>
+        <div className="search-box" role="search">
+          <Search size={18} aria-hidden="true" />
+          <label className="visually-hidden" htmlFor="offer-search">Szukaj książki</label>
+          <input id="offer-search" type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Szukaj po tytule..." />
+          {query && <button className="search-clear" type="button" aria-label="Wyczyść wyszukiwanie" onClick={() => { setQuery(""); setSearch(""); }}><X size={16} /></button>}
+        </div>
+        <button className={`filter-toggle ${showFilters ? "active" : ""}`} type="button" aria-expanded={showFilters} aria-controls="offer-filters" onClick={() => setShowFilters((shown) => !shown)}>
           <SlidersHorizontal size={16} /> Filtry
+          {activeFilterCount > 0 && <span className="filter-count">{activeFilterCount}</span>}
         </button>
         <label className="currency-select">
           <span>Waluta</span>
@@ -137,7 +160,7 @@ export function OffersPage() {
         </label>
       </div>
 
-      {showFilters && <div className="filter-panel">
+      {showFilters && <div className="filter-panel" id="offer-filters">
         <div className="filter-controls">
           <label className="field">
             <span>Cena od</span>
@@ -160,11 +183,7 @@ export function OffersPage() {
               <option value="ALL">Wszystkie</option>
             </select>
           </label>
-          {(minPrice || maxPrice || search || status !== "AVAILABLE") && (
-            <button className="clear-filters" type="button" onClick={() => { setMinPrice(""); setMaxPrice(""); setQuery(""); setStatus("AVAILABLE"); }}>
-              Wyczyść filtry
-            </button>
-          )}
+
         </div>
       </div>}
 
@@ -176,6 +195,7 @@ export function OffersPage() {
             : !rate
               ? "Pobieranie kursu..."
               : `Kurs PLN/${currency} z dnia ${rate.date}${rate.stale ? " (zapisany wcześniej)" : ""}.`}
+          {rateError && <button className="rate-retry" type="button" onClick={() => setRateAttempt((attempt) => attempt + 1)}>Spróbuj ponownie</button>}
           <span className="rate-source">{currencyLabel}</span>
         </p>
       )}
@@ -206,7 +226,7 @@ export function OffersPage() {
           <span className="empty-icon"><BookOpen size={21} /></span>
           <h3>{search || minPrice || maxPrice ? "Brak wyników" : "Brak ofert"}</h3>
           <p>{search || minPrice || maxPrice ? "Zmień wyszukiwanie lub filtry." : "Na razie nie ma żadnych ofert."}</p>
-          <button className="button button-outline" type="button" onClick={() => { setQuery(""); setMinPrice(""); setMaxPrice(""); setStatus("AVAILABLE"); }}>
+          <button className="button button-outline" type="button" onClick={clearFilters}>
             Wyczyść filtry
           </button>
           {user && <Link className="empty-cta" to="/wystaw">Dodaj ofertę <ArrowRight size={15} /></Link>}

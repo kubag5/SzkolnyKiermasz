@@ -26,7 +26,7 @@ export class UnsupportedCurrencyError extends Error {
 
 export class CurrencyUnavailableError extends Error {
   constructor() {
-    super("Kurs jest niedostępny. Spróbuj później.");
+    super("Nie udało się pobrać aktualnych kursów walut. Spróbuj ponownie później.");
     this.name = "CurrencyUnavailableError";
   }
 }
